@@ -59,7 +59,7 @@ app.use((req, res, next) => {
   // Set the server port
   const PORT = 2400;
 
-  server.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "127.0.0.1", () => {
     log(`Server is running on port ${PORT}`);
   });
 })();
