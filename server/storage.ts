@@ -1,70 +1,17 @@
-import { users, type User, type InsertUser, type Article, type Save, type Outfit, type OutfitArticle } from "../shared/schema.ts";
+import { pool } from './db'; // Make sure this path is correct
+import { User, Article, Save, Outfit, OutfitArticle } from "../shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import { RowDataPacket, ResultSetHeader } from 'mysql2/promise'; // Import required types
 
 const MemoryStore = createMemoryStore(session);
 
-const sampleArticles: Article[] = [
-  {
-    id: 1,
-    brand: "Khaadi",
-    name: "Embroidered Lawn Suit",
-    price: 5999,
-    category: "Traditional",
-    imageUrl: "https://images.pexels.com/photos/7679720/pexels-photo-7679720.jpeg",
-    productUrl: "https://www.khaadi.com/pk/lawn-suit",
-  },
-  {
-    id: 2,
-    brand: "Sapphire",
-    name: "Printed Cotton Kurta",
-    price: 2499,
-    category: "Casual",
-    imageUrl: "https://images.pexels.com/photos/7679863/pexels-photo-7679863.jpeg",
-    productUrl: "https://www.sapphire.pk/kurta",
-  },
-  {
-    id: 3,
-    brand: "Gul Ahmed",
-    name: "Formal Silk Shirt",
-    price: 4999,
-    category: "Formal",
-    imageUrl: "https://images.pexels.com/photos/7679657/pexels-photo-7679657.jpeg",
-    productUrl: "https://www.gulahmed.com/formal-shirt",
-  }
-];
-
-const sampleOutfits: Outfit[] = [
-  {
-    id: 100,
-    userId: 1,
-    imageUrl: "https://images.pexels.com/photos/2043590/pexels-photo-2043590.jpeg",
-    description: "Perfect summer casual look",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: 101,
-    userId: 1,
-    imageUrl: "https://images.pexels.com/photos/1183266/pexels-photo-1183266.jpeg",
-    description: "Formal office attire",
-    createdAt: new Date().toISOString()
-  }
-];
-
-const sampleOutfitArticles: OutfitArticle[] = [
-  {
-    id: 200,
-    outfitId: 100,
-    articleId: 2,
-    position: { x: 0.3, y: 0.5 }
-  },
-  {
-    id: 201,
-    outfitId: 101,
-    articleId: 3,
-    position: { x: 0.4, y: 0.4 }
-  }
-];
+// Define InsertUser type, assuming it's an omission
+export interface InsertUser {
+  username: string;
+  password: string;
+  preferences?: any;
+}
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -81,112 +28,92 @@ export interface IStorage {
   sessionStore: session.Store;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private articles: Map<number, Article>;
-  private saves: Map<number, Save>;
-  private outfits: Map<number, Outfit>;
-  private outfitArticles: Map<number, OutfitArticle>;
+export class MySQLStorage implements IStorage {
   sessionStore: session.Store;
-  currentId: number;
-
+  
   constructor() {
-    this.users = new Map();
-    this.articles = new Map();
-    this.saves = new Map();
-    this.outfits = new Map();
-    this.outfitArticles = new Map();
-    this.currentId = Math.max(
-      ...sampleArticles.map(a => a.id),
-      ...sampleOutfits.map(o => o.id),
-      ...sampleOutfitArticles.map(oa => oa.id)
-    ) + 1;
-
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000,
-    });
-
-    // Initialize sample data
-    sampleArticles.forEach(article => {
-      this.articles.set(article.id, article);
-    });
-
-    sampleOutfits.forEach(outfit => {
-      this.outfits.set(outfit.id, outfit);
-    });
-
-    sampleOutfitArticles.forEach(outfitArticle => {
-      this.outfitArticles.set(outfitArticle.id, outfitArticle);
     });
   }
 
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM Users WHERE id = ?', [id]);
+    return rows[0] as User | undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM Users WHERE username = ?', [username]);
+    return rows[0] as User | undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentId++;
-    const user: User = { ...insertUser, id, preferences: null };
-    this.users.set(id, user);
-    return user;
+    const [result] = await pool.query<ResultSetHeader>('INSERT INTO Users (username, password, preferences) VALUES (?, ?, ?)', 
+      [insertUser.username, insertUser.password, JSON.stringify(insertUser.preferences)]);
+    const [userRows] = await pool.query<RowDataPacket[]>('SELECT * FROM Users WHERE id = ?', [result.insertId]);
+    return userRows[0] as User;
   }
 
   async getArticles(categories?: string[]): Promise<Article[]> {
-    const articles = Array.from(this.articles.values());
-    if (!categories || categories.length === 0) {
-      return articles;
+    let query = 'SELECT * FROM Articles';
+    
+    if (categories && categories.length > 0) {
+      query += ' WHERE category IN (?)';
     }
-    return articles.filter(article => categories.includes(article.category));
+  
+    try {
+      const [rows] = await pool.query<RowDataPacket[]>(query, [categories]);
+      
+      // Convert to Article[] and log the response
+      const articles = rows as Article[];
+      // console.log('Query Result:', JSON.stringify(articles, null, 2)); // Log formatted JSON
+    
+      return articles;
+    } catch (error) {
+      console.error('Error executing query', error);
+      throw error;
+    }
   }
 
   async createSave(save: { userId: number; articleId: number }): Promise<Save> {
-    const id = this.currentId++;
-    const newSave: Save = { id, ...save };
-    this.saves.set(id, newSave);
-    return newSave;
+    const [result] = await pool.query<ResultSetHeader>('INSERT INTO Saves (user_id, article_id) VALUES (?, ?)', 
+      [save.userId, save.articleId]);
+    const [saveRows] = await pool.query<RowDataPacket[]>('SELECT * FROM Saves WHERE id = ?', [result.insertId]);
+    return saveRows[0] as Save;
   }
 
   async deleteSave(userId: number, articleId: number): Promise<void> {
-    const saves = Array.from(this.saves.values());
-    const saveToDelete = saves.find(
-      save => save.userId === userId && save.articleId === articleId
-    );
-    if (saveToDelete) {
-      this.saves.delete(saveToDelete.id);
-    }
+    await pool.query('DELETE FROM Saves WHERE user_id = ? AND article_id = ?', [userId, articleId]);
   }
 
   async getSavesByUser(userId: number): Promise<Save[]> {
-    return Array.from(this.saves.values()).filter(save => save.userId === userId);
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM Saves WHERE user_id = ?', [userId]);
+    return rows as Save[];
   }
 
   async getOutfits(): Promise<Outfit[]> {
-    return Array.from(this.outfits.values());
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM Outfits');
+    return rows as Outfit[];
   }
 
   async createOutfit(outfit: Omit<Outfit, "id">): Promise<Outfit> {
-    const id = this.currentId++;
-    const newOutfit: Outfit = { id, ...outfit };
-    this.outfits.set(id, newOutfit);
-    return newOutfit;
+    const [result] = await pool.query<ResultSetHeader>('INSERT INTO Outfits (user_id, image_url, description) VALUES (?, ?, ?)',
+      [outfit.userId, outfit.imageUrl, outfit.description]);
+    const [outfitRows] = await pool.query<RowDataPacket[]>('SELECT * FROM Outfits WHERE id = ?', [result.insertId]);
+    return outfitRows[0] as Outfit;
   }
 
   async getOutfitArticles(): Promise<OutfitArticle[]> {
-    return Array.from(this.outfitArticles.values());
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT * FROM OutfitArticles');
+    return rows as OutfitArticle[];
   }
 
   async createOutfitArticle(outfitArticle: Omit<OutfitArticle, "id">): Promise<OutfitArticle> {
-    const id = this.currentId++;
-    const newOutfitArticle: OutfitArticle = { id, ...outfitArticle };
-    this.outfitArticles.set(id, newOutfitArticle);
-    return newOutfitArticle;
+    const [result] = await pool.query<ResultSetHeader>('INSERT INTO OutfitArticles (outfit_id, article_id, position) VALUES (?, ?, ?)',
+      [outfitArticle.outfitId, outfitArticle.articleId, JSON.stringify(outfitArticle.position)]);
+    const [outfitArticleRows] = await pool.query<RowDataPacket[]>('SELECT * FROM OutfitArticles WHERE id = ?', [result.insertId]);
+    return outfitArticleRows[0] as OutfitArticle;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new MySQLStorage();

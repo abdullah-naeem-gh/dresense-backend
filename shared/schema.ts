@@ -1,58 +1,70 @@
-import { pgTable, text, serial, integer, boolean, jsonb } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+// Remove import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  preferences: jsonb("preferences").$type<string[]>(),
-});
+// User Schema
+export interface User {
+  id: number;
+  username: string;
+  password: string;
+  preferences?: any; // Preferences can be any valid JSON
+  createdAt: string;
+  updatedAt: string;
+}
 
-export const articles = pgTable("articles", {
-  id: serial("id").primaryKey(),
-  brand: text("brand").notNull(),
-  name: text("name").notNull(),
-  price: integer("price").notNull(),
-  category: text("category").notNull(),
-  imageUrl: text("image_url").notNull(),
-  productUrl: text("product_url").notNull(),
-});
+// Brand Schema
+export interface Brand {
+  id: number;
+  brandName: string;
+  websiteUrl?: string | null;
+  bio?: string | null;
+  profilePictureUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
-export const outfits = pgTable("outfits", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  imageUrl: text("image_url").notNull(),
-  description: text("description"),
-  createdAt: text("created_at").notNull(),
-});
+// Article Schema
+export interface Article {
+  id: number;
+  brandId: number;
+  name: string;
+  price: number;
+  category: string;
+  imageUrl: string;
+  productUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
-export const outfitArticles = pgTable("outfit_articles", {
-  id: serial("id").primaryKey(),
-  outfitId: integer("outfit_id").notNull().references(() => outfits.id),
-  articleId: integer("article_id").notNull().references(() => articles.id),
-  position: jsonb("position").$type<{ x: number; y: number }>(),
-});
+// Outfit Schema
+export interface Outfit {
+  id: number;
+  userId: number;
+  imageUrl: string;
+  description?: string | null;
+  createdAt: string;
+}
 
-export const saves = pgTable("saves", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  articleId: integer("article_id").notNull().references(() => articles.id),
-});
+// OutfitArticle Schema
+export interface OutfitArticle {
+  id: number;
+  outfitId: number;
+  articleId: number;
+  position: any; // Can be more specific if you define a position type
+  createdAt: string;
+  updatedAt: string;
+}
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
+// Save Schema
+export interface Save {
+  id: number;
+  userId: number;
+  articleId: number;
+  createdAt: string;
+}
 
-export const insertArticleSchema = createInsertSchema(articles);
-export const insertOutfitSchema = createInsertSchema(outfits).omit({ createdAt: true });
-export const insertOutfitArticleSchema = createInsertSchema(outfitArticles);
-export const insertSaveSchema = createInsertSchema(saves);
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
-export type Article = typeof articles.$inferSelect;
-export type Outfit = typeof outfits.$inferSelect;
-export type OutfitArticle = typeof outfitArticles.$inferSelect;
-export type Save = typeof saves.$inferSelect;
+// Follow Schema
+export interface Follow {
+  followerId: number;
+  followeeId: number;
+  followType: "user" | "brand";
+  createdAt: string;
+}
